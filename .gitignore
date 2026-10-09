@@ -1,9 +1,0 @@
-.env
-.env.*
-!.env.example
-node_modules/
-dist/
-.vercel/
-*.sqlite
-*.db
-.DS_Store
