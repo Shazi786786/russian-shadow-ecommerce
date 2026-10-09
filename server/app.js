@@ -31,7 +31,7 @@ app.post('/api/deposits',guard,wrap(async(req,res)=>{const amount=numeric(req.bo
 app.get('/api/deposits',guard,wrap(async(req,res)=>res.json(await query('SELECT d.*,m.code,m.network FROM deposits d JOIN payment_methods m ON m.id=d.method_id WHERE d.user_id=$1 ORDER BY d.id DESC',req.user.id))));
 app.patch('/api/deposits/:id/submit',guard,wrap(async(req,res)=>{const d=await one("UPDATE deposits SET status='pending',txid=$1 WHERE id=$2 AND user_id=$3 AND status='awaiting_payment' AND expires_at>now() RETURNING id",String(req.body?.txid||'').slice(0,200),req.params.id,req.user.id);return d?res.json({ok:true}):fail(res,400,'Deposit already submitted or payment window expired')}));
 app.get('/api/wallet',guard,wrap(async(req,res)=>res.json({balance_cents:req.user.balance_cents,ledger:await query('SELECT * FROM ledger WHERE user_id=$1 ORDER BY id DESC',req.user.id)})));
-app.post('/api/orders',guard,wrap(async(req,res)=>{const items=req.body?.items;if(!Array.isArray(items)||items.length<1||items.length>40)return fail(res,400,'Invalid cart');const quantities=new Map();for(const it of items){const id=Number(it.id),qty=Number(it.quantity);if(!Number.isSafeInteger(id)||!Number.isSafeInteger(qty)||qty<1||qty>100)return fail(res,400,'Invalid cart');quantities.set(id,(quantities.get(id)||0)+qty)}const client=await pool.connect();try{await client.query('BEGIN');const ordered=[];let total=0;for(const [id,qty] of [...quantities].sort((a,b)=>a[0]-b[0])){const p=(await client.query('SELECT * FROM products WHERE id=$1 AND active=true FOR UPDATE',[id])).rows[0];if(!p||p.stock<qty)throw Error('One or more products are out of stock');total+=Number(p.price_cents)*qty;ordered.push({p,qty})}if(total<=0)throw Error('Invalid order');const debit=await client.query('UPDATE users SET balance_cents=balance_cents-$1 WHERE id=$2 AND balance_cents >= $1 RETURNING id',[total,req.user.id]);if(!debit.rowCount)throw Error('Insufficient wallet balance');const order=(await client.query('INSERT INTO orders(user_id,total_cents) VALUES($1,$2) RETURNING id',[req.user.id,total])).rows[0];for(const {p,qty} of ordered){await client.query('UPDATE products SET stock=stock-$1 WHERE id=$2',[qty,p.id]);await client.query('INSERT INTO order_items(order_id,product_id,seller_id,title,price_cents,quantity,delivery_text) VALUES($1,$2,$3,$4,$5,$6,$7)',[order.id,p.id,p.seller_id,p.title,p.price_cents,qty,p.delivery_text])}await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'purchase',$3)",[req.user.id,-total,order.id]);await client.query('COMMIT');res.json({ok:true,order_id:order.id})}catch(e){await client.query('ROLLBACK');return fail(res,400,e.message)}finally{client.release()}}));
+app.post('/api/orders',guard,wrap(async(req,res)=>{const items=req.body?.items;if(!Array.isArray(items)||items.length<1||items.length>40)return fail(res,400,'Invalid cart');const quantities=new Map();for(const it of items){const id=Number(it.id),qty=Number(it.quantity);if(!Number.isSafeInteger(id)||!Number.isSafeInteger(qty)||qty<1||qty>100)return fail(res,400,'Invalid cart');quantities.set(id,(quantities.get(id)||0)+qty)}const client=await pool.connect();try{await client.query('BEGIN');const ordered=[];let total=0;for(const [id,qty] of [...quantities].sort((a,b)=>a[0]-b[0])){const p=(await client.query('SELECT * FROM products WHERE id=$1 AND active=true FOR UPDATE',[id])).rows[0];if(!p||p.stock<qty)throw Error('One or more products are out of stock');total+=Number(p.price_cents)*qty;ordered.push({p,qty})}if(total<=0)throw Error('Invalid order');const debit=await client.query('UPDATE users SET balance_cents=balance_cents-$1 WHERE id=$2 AND balance_cents >= $1 RETURNING id',[total,req.user.id]);if(!debit.rowCount)throw Error('Insufficient wallet balance');const order=(await client.query('INSERT INTO orders(user_id,total_cents) VALUES($1,$2) RETURNING id',[req.user.id,total])).rows[0];for(const {p,qty} of ordered){await client.query('UPDATE products SET stock=stock-$1 WHERE id=$2',[qty,p.id]);const oi=(await client.query('INSERT INTO order_items(order_id,product_id,seller_id,title,price_cents,quantity,delivery_text) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[order.id,p.id,p.seller_id,p.title,p.price_cents,qty,p.delivery_text])).rows[0];if(p.seller_id){const gross=Number(p.price_cents)*qty,commission=Math.round(gross*35/100);await client.query('INSERT INTO seller_earnings(order_item_id,seller_id,gross_cents,commission_cents,net_cents) VALUES($1,$2,$3,$4,$5)',[oi.id,p.seller_id,gross,commission,gross-commission])}}await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'purchase',$3)",[req.user.id,-total,order.id]);await client.query('COMMIT');res.json({ok:true,order_id:order.id})}catch(e){await client.query('ROLLBACK');return fail(res,400,e.message)}finally{client.release()}}));
 app.get('/api/orders',guard,wrap(async(req,res)=>{const orders=await query('SELECT * FROM orders WHERE user_id=$1 ORDER BY id DESC',req.user.id);for(const o of orders)o.items=await query('SELECT * FROM order_items WHERE order_id=$1',o.id);res.json(orders)}));
 app.get('/api/admin/overview',guard,roles('admin'),wrap(async(_req,res)=>{const n=await one("SELECT (SELECT count(*) FROM users)::int users,(SELECT count(*) FROM products)::int products,(SELECT count(*) FROM deposits WHERE status='pending')::int pending,(SELECT count(*) FROM orders)::int orders");res.json(n)}));
 app.get('/api/admin/users',guard,roles('admin'),wrap(async(_req,res)=>res.json(await query('SELECT id,username,role,balance_cents,created_at FROM users ORDER BY id DESC'))));
@@ -54,25 +54,25 @@ app.get('/api/qr',guard,wrap(async(req,res)=>{const d=await one('SELECT address_
 app.get('/api/seller/application',guard,wrap(async(req,res)=>res.json(await one('SELECT id,full_name,address,service_category,service_demo,status,created_at FROM seller_applications WHERE user_id=$1 ORDER BY id DESC LIMIT 1',req.user.id)||null)));
 app.post('/api/seller/application',guard,wrap(async(req,res)=>{
   if(req.user.role!=='user')return fail(res,403,'Only customer accounts may apply');
-  const {full_name,address,service_category,service_demo}=req.body||{};
-  if([full_name,address,service_category,service_demo].some(v=>typeof v!=='string'||v.trim().length<3||v.length>2000))return fail(res,400,'Complete all seller details and include a demo link or description');
+  const {full_name,address,service_category,service_demo,usdt_network,usdt_address}=req.body||{};
+  if([full_name,address,service_category,service_demo].some(v=>typeof v!=='string'||v.trim().length<3||v.length>2000)||!['TRC20','ERC20'].includes(usdt_network)||typeof usdt_address!=='string'||usdt_address.trim().length<20||usdt_address.trim().length>120)return fail(res,400,'Complete all seller details and include a demo link or description');
   const last=await one('SELECT status FROM seller_applications WHERE user_id=$1 ORDER BY id DESC LIMIT 1',req.user.id);
   if(last?.status==='pending')return fail(res,409,'Your application is already under review');
-  const result=await one('INSERT INTO seller_applications(user_id,full_name,address,service_category,service_demo) VALUES($1,$2,$3,$4,$5) RETURNING id,status',req.user.id,full_name.trim(),address.trim(),service_category.trim(),service_demo.trim());
+  const result=await one('INSERT INTO seller_applications(user_id,full_name,address,service_category,service_demo,usdt_network,usdt_address) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,status',req.user.id,full_name.trim(),address.trim(),service_category.trim(),service_demo.trim(),usdt_network,usdt_address.trim());
   res.json(result);
 }));
-app.get('/api/admin/seller-applications',guard,roles('admin'),wrap(async(req,res)=>res.json(await query('SELECT s.id,s.user_id,u.username,s.full_name,s.address,s.service_category,s.service_demo,s.status,s.created_at FROM seller_applications s JOIN users u ON u.id=s.user_id ORDER BY s.created_at DESC'))));
+app.get('/api/admin/seller-applications',guard,roles('admin'),wrap(async(req,res)=>res.json(await query('SELECT s.id,s.user_id,u.username,s.full_name,s.address,s.service_category,s.service_demo,s.usdt_network,s.usdt_address,s.status,s.created_at FROM seller_applications s JOIN users u ON u.id=s.user_id ORDER BY s.created_at DESC'))));
 app.patch('/api/admin/seller-applications/:id',guard,roles('admin'),wrap(async(req,res)=>{
   const status=req.body?.status;
   if(!['approved','rejected'].includes(status))return fail(res,400,'Invalid review action');
   const client=await pool.connect();
   try{
     await client.query('BEGIN');
-    const found=await client.query("SELECT id,user_id FROM seller_applications WHERE id=$1 AND status='pending' FOR UPDATE",[req.params.id]);
+    const found=await client.query("SELECT id,user_id,usdt_network,usdt_address FROM seller_applications WHERE id=$1 AND status='pending' FOR UPDATE",[req.params.id]);
     if(!found.rowCount){await client.query('ROLLBACK');return fail(res,409,'Application has already been reviewed')}
     const u=await client.query('SELECT role FROM users WHERE id=$1 FOR UPDATE',[found.rows[0].user_id]);
     if(u.rows[0]?.role!=='user'){await client.query('ROLLBACK');return fail(res,409,'Applicant role has changed')}
-    if(status==='approved')await client.query("UPDATE users SET role='seller' WHERE id=$1",[found.rows[0].user_id]);
+    if(status==='approved'){await client.query("UPDATE users SET role='seller' WHERE id=$1",[found.rows[0].user_id]);if(found.rows[0].usdt_network&&found.rows[0].usdt_address)await client.query("INSERT INTO seller_payout_profiles(user_id,usdt_network,usdt_address) VALUES($1,$2,$3) ON CONFLICT(user_id) DO UPDATE SET usdt_network=EXCLUDED.usdt_network,usdt_address=EXCLUDED.usdt_address",[found.rows[0].user_id,found.rows[0].usdt_network,found.rows[0].usdt_address])}
     await client.query('UPDATE seller_applications SET status=$1,reviewed_at=now(),reviewed_by=$2 WHERE id=$3',[status,req.user.id,req.params.id]);
     await client.query('COMMIT');res.json({ok:true,status});
   }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
@@ -100,5 +100,38 @@ app.get('/api/photos/:id',wrap(async(req,res)=>{
   if(!p)return fail(res,404,'Photo not found');
   res.set('Cache-Control','public, max-age=86400, immutable');
   res.type(p.mime_type).send(p.image_data);
+}));
+
+/* Seller sales split is recorded at checkout: 35% platform commission, 65% seller net. All payments are manual and reviewed. */
+app.get('/api/seller/finance',guard,roles('seller','admin'),wrap(async(req,res)=>{
+ const totals=await one('SELECT COALESCE(SUM(gross_cents),0)::bigint gross_cents,COALESCE(SUM(commission_cents),0)::bigint commission_cents,COALESCE(SUM(net_cents),0)::bigint net_cents FROM seller_earnings WHERE seller_id=$1',req.user.id);
+ const reserved=await one("SELECT COALESCE(SUM(amount_cents),0)::bigint reserved_cents FROM seller_payout_requests WHERE seller_id=$1 AND status IN ('pending','paid')",req.user.id);
+ res.json({totals,reserved_cents:reserved.reserved_cents,available_cents:Math.max(0,Number(totals.net_cents)-Number(reserved.reserved_cents)),profile:await one('SELECT usdt_network,usdt_address FROM seller_payout_profiles WHERE user_id=$1',req.user.id),requests:await query('SELECT id,amount_cents,usdt_network,usdt_address,status,txid,created_at FROM seller_payout_requests WHERE seller_id=$1 ORDER BY id DESC',req.user.id)});
+}));
+app.put('/api/seller/payout-profile',guard,roles('seller'),wrap(async(req,res)=>{
+ const {usdt_network,usdt_address}=req.body||{};
+ if(!['TRC20','ERC20'].includes(usdt_network)||typeof usdt_address!=='string'||usdt_address.trim().length<20||usdt_address.length>120)return fail(res,400,'Enter a valid USDT network and receiving address');
+ await query('INSERT INTO seller_payout_profiles(user_id,usdt_network,usdt_address) VALUES($1,$2,$3) ON CONFLICT(user_id) DO UPDATE SET usdt_network=$2,usdt_address=$3,updated_at=now()',req.user.id,usdt_network,usdt_address.trim());res.json({ok:true});
+}));
+app.post('/api/seller/payout-requests',guard,roles('seller'),wrap(async(req,res)=>{
+ const amount=numeric(req.body?.amount_cents);if(!amount)return fail(res,400,'Enter a positive payout amount');
+ const client=await pool.connect();
+ try{await client.query('BEGIN');await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[req.user.id]);
+ const profile=(await client.query('SELECT * FROM seller_payout_profiles WHERE user_id=$1',[req.user.id])).rows[0];
+ if(!profile){await client.query('ROLLBACK');return fail(res,400,'Configure your USDT receiving address first')}
+ const totals=(await client.query('SELECT COALESCE(SUM(net_cents),0)::bigint n FROM seller_earnings WHERE seller_id=$1',[req.user.id])).rows[0];
+ const used=(await client.query("SELECT COALESCE(SUM(amount_cents),0)::bigint n FROM seller_payout_requests WHERE seller_id=$1 AND status IN ('pending','paid')",[req.user.id])).rows[0];
+ if(Number(totals.n)-Number(used.n)<amount){await client.query('ROLLBACK');return fail(res,400,'Insufficient seller earnings')}
+ const payout=(await client.query("INSERT INTO seller_payout_requests(seller_id,amount_cents,usdt_network,usdt_address) VALUES($1,$2,$3,$4) RETURNING id,status",[req.user.id,amount,profile.usdt_network,profile.usdt_address])).rows[0];
+ await client.query('COMMIT');res.status(201).json(payout);
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}));
+app.get('/api/admin/payout-requests',guard,roles('admin'),wrap(async(req,res)=>res.json(await query('SELECT p.*,u.username seller_username FROM seller_payout_requests p JOIN users u ON u.id=p.seller_id ORDER BY p.id DESC'))));
+app.patch('/api/admin/payout-requests/:id',guard,roles('admin'),wrap(async(req,res)=>{
+ const status=req.body?.status,txid=String(req.body?.txid||'').trim();
+ if(!['paid','rejected'].includes(status)||status==='paid'&&(txid.length<8||txid.length>160))return fail(res,400,'Mark paid with a valid on-chain transaction reference, or reject');
+ const p=await one("UPDATE seller_payout_requests SET status=$1,txid=$2,reviewed_at=now(),reviewed_by=$3 WHERE id=$4 AND status='pending' RETURNING id,status",status,status==='paid'?txid:null,req.user.id,req.params.id);
+ if(!p)return fail(res,409,'Payout already reviewed or missing');
+ res.json(p);
 }));
 export default app;
