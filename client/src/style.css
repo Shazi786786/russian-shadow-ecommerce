@@ -104,3 +104,35 @@
 .hero .actions button{width:100%;padding:10px 7px;font-size:11px;min-height:44px}
 .hero-vertical{display:none}
 }
+
+/* Hero production cleanup: keep only hacker + map from the existing image; crop baked labels/buttons. */
+.hero{position:relative;isolation:isolate;overflow:hidden;min-height:610px;background:#020b09}
+.hero::before{background:none!important;content:none!important}
+.hero-visual{
+ display:block!important;position:absolute;inset:0 0 0 auto;width:65%;height:100%;z-index:0;
+ background-image:url('/assets/hero-shadow.jpg')!important;
+ background-size:auto 136%!important;
+ background-position:left top!important;
+ background-repeat:no-repeat!important;
+ opacity:1!important;
+ -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 68%,transparent 85%,transparent 100%);
+ mask-image:linear-gradient(to bottom,#000 0%,#000 68%,transparent 85%,transparent 100%);
+}
+.hero::after{
+ content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+ background:linear-gradient(90deg,#020b09 0%,rgba(2,11,9,.96) 24%,rgba(2,11,9,.70) 38%,rgba(2,11,9,.12) 63%,rgba(2,11,9,0) 90%),linear-gradient(0deg,#020b09 0%,transparent 24%);
+}
+.hero-copy{position:relative;z-index:3;width:55%;max-width:750px;padding:55px clamp(25px,5vw,76px)}
+.hero-vertical{display:none!important}
+.hero .actions{position:relative;z-index:4}
+@media(max-width:760px){
+ .hero{min-height:640px;align-items:flex-end;padding-top:180px}
+ .hero-visual{inset:0 0 auto 0;width:100%;height:76%;background-size:auto 125%!important;background-position:38% top!important;
+ -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 55%,transparent 86%);
+ mask-image:linear-gradient(to bottom,#000 0%,#000 55%,transparent 86%)}
+ .hero::after{background:linear-gradient(to bottom,rgba(2,11,9,.04) 0%,rgba(2,11,9,.12) 30%,rgba(2,11,9,.70) 55%,#020b09 81%)}
+ .hero-copy{width:100%;max-width:none;padding:20px 18px 30px}
+ .hero h1{font-size:clamp(56px,15vw,82px);line-height:.86}
+ .hero .actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+ .hero .actions button{width:100%;min-width:0;font-size:11px;padding:10px 8px}
+}
