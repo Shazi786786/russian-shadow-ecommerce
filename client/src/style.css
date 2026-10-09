@@ -56,3 +56,32 @@
  .hero::before{background-size:94% auto;background-position:right center}
  .hero-copy{width:70%}
 }
+
+/* Russian Shadow hero: deployed artwork layer fix; desktop/tablet/mobile. */
+.hero{isolation:isolate;position:relative;min-height:clamp(470px,42vw,640px);overflow:hidden;background:#020907}
+.hero::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background-image:url('/assets/hero-shadow.jpg');background-repeat:no-repeat;background-size:auto 145%;background-position:right 13%;opacity:1}
+.hero::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(90deg,#020907 0%,rgba(2,9,7,.98) 13%,rgba(2,9,7,.89) 27%,rgba(2,9,7,.62) 40%,rgba(2,9,7,.12) 63%,rgba(2,9,7,0) 100%)}
+.hero-visual{display:none!important}
+.hero-copy{z-index:3;position:relative;width:min(56%,700px);padding:48px clamp(22px,4vw,65px)}
+.hero-vertical{z-index:3;right:2.5%;top:9%;text-shadow:0 2px 6px #020907}
+.hero .actions{position:relative;z-index:4}
+.hero .actions button{cursor:pointer}
+@media(max-width:1100px) and (min-width:761px){
+.hero::before{background-size:auto 132%;background-position:72% 9%}
+.hero-copy{width:61%;padding:35px}
+.hero h1{font-size:clamp(64px,9vw,102px)}
+}
+@media(max-width:760px){
+.hero{min-height:600px;padding-top:160px;align-items:flex-end}
+.hero::before{background-size:auto 115%;background-position:47% top}
+.hero::after{background:linear-gradient(180deg,rgba(2,9,7,.06) 0%,rgba(2,9,7,.1) 24%,rgba(2,9,7,.68) 48%,rgba(2,9,7,.96) 74%,#020907 100%)}
+.hero-copy{width:100%;max-width:none;padding:20px 16px 26px}
+.hero h1{font-size:clamp(53px,14vw,76px);line-height:.87}
+.hero .eyebrow{font-size:9px;letter-spacing:1.3px}
+.hero p{font-size:10px;line-height:1.5;letter-spacing:1.6px}
+.hero-perks{font-size:9px;gap:9px}
+.hero .actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.hero .actions .primary,.hero .actions .outline{width:100%;min-width:0;padding:10px 7px;font-size:11px;min-height:44px}
+.hero-vertical{display:none}
+}
+@media(max-width:370px){.hero .actions{grid-template-columns:1fr}}
