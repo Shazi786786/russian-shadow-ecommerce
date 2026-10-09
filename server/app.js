@@ -50,4 +50,31 @@ app.patch('/api/manage/products/:id',guard,roles('admin','seller'),wrap(async(re
 app.delete('/api/manage/products/:id',guard,roles('admin','seller'),wrap(async(req,res)=>{const p=await one('UPDATE products SET active=false WHERE id=$1 AND ($2::boolean OR seller_id=$3) RETURNING id',req.params.id,req.user.role==='admin',req.user.id);return p?res.json({ok:true}):fail(res,404,'Product missing or not yours')}));
 app.get('/api/seller/orders',guard,roles('admin','seller'),wrap(async(req,res)=>res.json(await query('SELECT oi.*,o.created_at,u.username buyer,o.id order_id FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN users u ON u.id=o.user_id WHERE ($1::boolean OR oi.seller_id=$2) ORDER BY oi.id DESC',req.user.role==='admin',req.user.id))));
 app.get('/api/qr',guard,wrap(async(req,res)=>{const d=await one('SELECT address_snapshot FROM deposits WHERE id=$1 AND user_id=$2',req.query.deposit_id,req.user.id);if(!d)return fail(res,404,'Not found');res.type('png').send(await QRCode.toBuffer(d.address_snapshot,{width:260,margin:2}))}));
+
+app.get('/api/seller/application',guard,wrap(async(req,res)=>res.json(await one('SELECT id,full_name,address,service_category,service_demo,status,created_at FROM seller_applications WHERE user_id=$1 ORDER BY id DESC LIMIT 1',req.user.id)||null)));
+app.post('/api/seller/application',guard,wrap(async(req,res)=>{
+  if(req.user.role!=='user')return fail(res,403,'Only customer accounts may apply');
+  const {full_name,address,service_category,service_demo}=req.body||{};
+  if([full_name,address,service_category,service_demo].some(v=>typeof v!=='string'||v.trim().length<3||v.length>2000))return fail(res,400,'Complete all seller details and include a demo link or description');
+  const last=await one('SELECT status FROM seller_applications WHERE user_id=$1 ORDER BY id DESC LIMIT 1',req.user.id);
+  if(last?.status==='pending')return fail(res,409,'Your application is already under review');
+  const result=await one('INSERT INTO seller_applications(user_id,full_name,address,service_category,service_demo) VALUES($1,$2,$3,$4,$5) RETURNING id,status',req.user.id,full_name.trim(),address.trim(),service_category.trim(),service_demo.trim());
+  res.json(result);
+}));
+app.get('/api/admin/seller-applications',guard,roles('admin'),wrap(async(req,res)=>res.json(await query('SELECT s.id,s.user_id,u.username,s.full_name,s.address,s.service_category,s.service_demo,s.status,s.created_at FROM seller_applications s JOIN users u ON u.id=s.user_id ORDER BY s.created_at DESC'))));
+app.patch('/api/admin/seller-applications/:id',guard,roles('admin'),wrap(async(req,res)=>{
+  const status=req.body?.status;
+  if(!['approved','rejected'].includes(status))return fail(res,400,'Invalid review action');
+  const client=await pool.connect();
+  try{
+    await client.query('BEGIN');
+    const found=await client.query("SELECT id,user_id FROM seller_applications WHERE id=$1 AND status='pending' FOR UPDATE",[req.params.id]);
+    if(!found.rowCount){await client.query('ROLLBACK');return fail(res,409,'Application has already been reviewed')}
+    const u=await client.query('SELECT role FROM users WHERE id=$1 FOR UPDATE',[found.rows[0].user_id]);
+    if(u.rows[0]?.role!=='user'){await client.query('ROLLBACK');return fail(res,409,'Applicant role has changed')}
+    if(status==='approved')await client.query("UPDATE users SET role='seller' WHERE id=$1",[found.rows[0].user_id]);
+    await client.query('UPDATE seller_applications SET status=$1,reviewed_at=now(),reviewed_by=$2 WHERE id=$3',[status,req.user.id,req.params.id]);
+    await client.query('COMMIT');res.json({ok:true,status});
+  }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}));
 export default app;
