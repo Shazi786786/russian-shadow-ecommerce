@@ -8,7 +8,7 @@ import pg from 'pg';
 
 const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false},max:4,connectionTimeoutMillis:10000});
 const secret=process.env.JWT_SECRET;
-const app=express();app.use(express.json({limit:'100kb'}));app.use(cookieParser());
+const app=express();app.use(express.json({limit:'3mb'}));app.use(cookieParser());
 const query=async(sql,...params)=>(await pool.query(sql,params)).rows;
 const one=async(sql,...params)=>(await query(sql,...params))[0];
 const fail=(r,c,m)=>r.status(c).json({error:m});
@@ -76,5 +76,29 @@ app.patch('/api/admin/seller-applications/:id',guard,roles('admin'),wrap(async(r
     await client.query('UPDATE seller_applications SET status=$1,reviewed_at=now(),reviewed_by=$2 WHERE id=$3',[status,req.user.id,req.params.id]);
     await client.query('COMMIT');res.json({ok:true,status});
   }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}));
+
+/* Persistent product photo uploads stored in PostgreSQL (Vercel has no durable local filesystem). */
+app.post('/api/manage/photo',guard,roles('admin','seller'),wrap(async(req,res)=>{
+  const raw=req.body?.data;
+  if(typeof raw!=='string'||raw.length>2200000)return fail(res,400,'Select a JPG, PNG or WebP image under 1.5 MB');
+  const match=/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(raw);
+  if(!match)return fail(res,400,'Unsupported image format');
+  const bytes=Buffer.from(match[2],'base64');
+  if(!bytes.length||bytes.length>1500000)return fail(res,400,'Maximum photo size is 1.5 MB');
+  const kind=match[1];
+  const valid=(kind==='image/jpeg'&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255)||
+   (kind==='image/png'&&bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))||
+   (kind==='image/webp'&&bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP');
+  if(!valid)return fail(res,400,'Invalid image data');
+  const photo=await one('INSERT INTO product_photos(uploader_id,image_data,mime_type) VALUES($1,$2,$3) RETURNING id',req.user.id,bytes,kind);
+  res.status(201).json({url:'/api/photos/'+photo.id});
+}));
+app.get('/api/photos/:id',wrap(async(req,res)=>{
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id))return fail(res,404,'Not found');
+  const p=await one('SELECT image_data,mime_type FROM product_photos WHERE id=$1',req.params.id);
+  if(!p)return fail(res,404,'Photo not found');
+  res.set('Cache-Control','public, max-age=86400, immutable');
+  res.type(p.mime_type).send(p.image_data);
 }));
 export default app;
