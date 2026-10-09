@@ -85,3 +85,22 @@
 .hero-vertical{display:none}
 }
 @media(max-width:370px){.hero .actions{grid-template-columns:1fr}}
+
+/* Fixed artwork display — artwork lives in client/public which Vite now copies to dist. */
+.hero{position:relative;isolation:isolate;overflow:hidden;background:#020909;min-height:clamp(490px,42vw,660px)}
+.hero::before{content:"";position:absolute;inset:0;z-index:0;background:url('/assets/hero-shadow.jpg') 92% 42%/auto 132% no-repeat;opacity:1;pointer-events:none}
+.hero::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(90deg,#020b09 0%,rgba(2,11,9,.97) 22%,rgba(2,11,9,.84) 35%,rgba(2,11,9,.3) 54%,rgba(2,11,9,0) 74%)}
+.hero-visual{display:none!important}
+.hero-copy{position:relative;z-index:3;width:53%;padding:50px clamp(28px,5vw,74px)}
+.hero-vertical{position:absolute;z-index:3;right:2%;top:10%;text-shadow:0 3px 8px #000}
+.hero .actions{position:relative;z-index:4}
+@media(max-width:760px){
+.hero{min-height:625px;align-items:flex-end;padding-top:170px}
+.hero::before{background-size:auto 103%;background-position:47% top}
+.hero::after{background:linear-gradient(180deg,rgba(2,11,9,.04) 0%,rgba(2,11,9,.12) 25%,rgba(2,11,9,.58) 45%,rgba(2,11,9,.93) 67%,#020b09 100%)}
+.hero-copy{width:100%;max-width:none;padding:22px 17px 27px}
+.hero h1{font-size:clamp(55px,14vw,78px);line-height:.86}
+.hero .actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.hero .actions button{width:100%;padding:10px 7px;font-size:11px;min-height:44px}
+.hero-vertical{display:none}
+}
