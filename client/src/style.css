@@ -192,3 +192,7 @@
 .owner-handle{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:#83ff91;background:#0f281c;border:1px solid #28573a;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:700;letter-spacing:.02em}
 .owner-handle svg{flex-shrink:0}
 @media(max-width:720px){.owner-handle{font-size:11px;padding:6px 8px;gap:4px}.owner-handle svg{width:12px;height:12px}}
+
+/* Mobile header: keep account access visible above search */
+@media(max-width:760px){.top-inner{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:8px!important;padding:10px 12px!important}.top-inner .logo{order:1!important;flex:1 1 auto!important}.top-inner .owner-handle{order:2!important}.top-inner .cart-button{order:3!important}.top-inner .head-link{order:4!important;display:inline-flex!important;visibility:visible!important;opacity:1!important;align-items:center!important;gap:5px!important;flex:0 0 auto!important;font-size:12px!important;white-space:nowrap!important;padding:9px!important;border:1px solid #34774b!important;border-radius:7px!important;color:#80ff89!important}.top-inner .hamburger{order:5!important;display:inline-flex!important}.top-inner .search{order:6!important;flex:1 0 100%!important;width:100%!important;margin:5px 0 0!important}.top-inner .head-link svg{width:15px;height:15px}}
+@media(max-width:390px){.top-inner .head-link{font-size:11px!important}.top-inner .owner-handle{padding:5px!important;font-size:10px!important}}
