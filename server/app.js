@@ -160,6 +160,17 @@ app.post('/api/manage/photo',guard,roles('admin','seller'),wrap(async(req,res)=>
    (kind==='image/png'&&bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))||
    (kind==='image/webp'&&bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP');
   if(!valid)return fail(res,400,'Invalid image data');
+  // Reject truncated and malformed images; never execute or interpret uploaded bytes.
+  let complete=false;
+  if(kind==='image/jpeg'){
+    complete=bytes.length>=16&&bytes[bytes.length-2]===255&&bytes[bytes.length-1]===217;
+  }else if(kind==='image/png'){
+    const size=bytes.length;
+    complete=size>=45&&bytes.readUInt32BE(8)===13&&bytes.toString('ascii',12,16)==='IHDR'&&bytes.readUInt32BE(16)>0&&bytes.readUInt32BE(20)>0&&bytes.readUInt32BE(16)<=10000&&bytes.readUInt32BE(20)<=10000&&bytes.toString('ascii',size-8,size-4)==='IEND';
+  }else if(kind==='image/webp'){
+    complete=bytes.length>=30&&bytes.readUInt32LE(4)+8===bytes.length&&['VP8 ','VP8L','VP8X'].includes(bytes.toString('ascii',12,16));
+  }
+  if(!complete)return fail(res,400,'Incomplete or invalid image file');
   const photo=await one('INSERT INTO product_photos(uploader_id,image_data,mime_type) VALUES($1,$2,$3) RETURNING id',req.user.id,bytes,kind);
   res.status(201).json({url:'/api/photos/'+photo.id});
 }));
