@@ -54,25 +54,38 @@ app.patch('/api/orders/:id/confirm',guard,wrap(async(req,res)=>{
 app.post('/api/orders/:id/refund',guard,wrap(async(req,res)=>{
  const reason=String(req.body?.reason||'').trim();
  if(reason.length<10||reason.length>1500)return fail(res,400,'Please explain the issue (10–1500 characters)');
- const o=await one("UPDATE orders SET buyer_status='refund_requested',refund_reason=$1,refund_requested_at=now() WHERE id=$2 AND user_id=$3 AND buyer_status='pending' AND created_at >= now()-interval '3 days' RETURNING id",reason,req.params.id,req.user.id);
- if(!o)return fail(res,409,'Refund can only be requested within 3 days before confirming receipt');
- res.json({ok:true,status:'refund_requested'});
+ const client=await pool.connect();
+ try{await client.query('BEGIN');
+ const o=(await client.query("SELECT * FROM orders WHERE id=$1 AND user_id=$2 AND buyer_status='pending' AND created_at>=now()-interval '3 days' FOR UPDATE",[req.params.id,req.user.id])).rows[0];
+ if(!o){await client.query('ROLLBACK');return fail(res,409,'Refund available only within 3 days before confirming receipt')}
+ const released=(await client.query("SELECT COUNT(*)::int AS n FROM seller_earnings se JOIN order_items oi ON oi.id=se.order_item_id WHERE oi.order_id=$1 AND se.released_at IS NOT NULL",[o.id])).rows[0];
+ if(released.n){await client.query('ROLLBACK');return fail(res,409,'Seller payout already released; contact support')}
+ await client.query('UPDATE users SET balance_cents=balance_cents+$1 WHERE id=$2',[o.total_cents,o.user_id]);
+ await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'refund',$3)",[o.user_id,o.total_cents,o.id]);
+ await client.query('UPDATE seller_earnings SET voided_at=now() WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1) AND voided_at IS NULL',[o.id]);
+ await client.query("UPDATE orders SET buyer_status='refunded',refund_reason=$1,refund_requested_at=now() WHERE id=$2",[reason,o.id]);
+ await client.query('COMMIT');res.json({ok:true,status:'refunded',credited_cents:o.total_cents});
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
 }));
-app.get('/api/admin/refunds',guard,roles('admin'),wrap(async(_req,res)=>res.json(await query("SELECT o.id,o.user_id,u.username,o.total_cents,o.buyer_status,o.refund_reason,o.refund_requested_at,o.refund_admin_message,o.created_at FROM orders o JOIN users u ON u.id=o.user_id WHERE o.buyer_status IN ('refund_requested','refunded','refund_rejected') ORDER BY CASE WHEN o.buyer_status='refund_requested' THEN 0 ELSE 1 END,o.id DESC"))));
+app.get('/api/admin/refunds',guard,roles('admin'),wrap(async(_req,res)=>res.json(await query("SELECT o.id,o.user_id,u.username,o.total_cents,o.buyer_status,o.refund_reason,o.refund_requested_at,o.refund_admin_message,o.created_at FROM orders o JOIN users u ON u.id=o.user_id WHERE o.buyer_status IN ('refund_requested','refunded','refund_rejected') ORDER BY CASE WHEN o.buyer_status='refunded' AND o.refund_reviewed_at IS NULL THEN 0 ELSE 1 END,o.id DESC"))));
 app.patch('/api/admin/refunds/:id',guard,roles('admin'),wrap(async(req,res)=>{
  const decision=req.body?.decision;
  const message=String(req.body?.message||'').trim();
  if(!['approve','reject'].includes(decision)||message.length>1500)return fail(res,400,'Invalid refund decision');
  const client=await pool.connect();
  try{await client.query('BEGIN');
- const o=(await client.query("SELECT * FROM orders WHERE id=$1 AND buyer_status='refund_requested' FOR UPDATE",[req.params.id])).rows[0];
- if(!o){await client.query('ROLLBACK');return fail(res,409,'Refund request already reviewed or missing')}
- if(decision==='approve'){
-   const reserved=(await client.query("SELECT COALESCE(SUM(spr.amount_cents),0)::bigint AS reserved FROM seller_payout_requests spr WHERE spr.seller_id IN (SELECT DISTINCT oi.seller_id FROM order_items oi WHERE oi.order_id=$1 AND oi.seller_id IS NOT NULL) AND spr.status IN ('pending','paid')",[o.id])).rows[0];
-   const released=(await client.query("SELECT COUNT(*)::int AS n FROM seller_earnings se JOIN order_items oi ON oi.id=se.order_item_id WHERE oi.order_id=$1 AND se.released_at IS NOT NULL",[o.id])).rows[0];
-   if(released.n>0){await client.query('ROLLBACK');return fail(res,409,'Seller earnings already released; manual resolution required')}
+ const o=(await client.query("SELECT * FROM orders WHERE id=$1 AND buyer_status IN ('refunded','refund_requested') FOR UPDATE",[req.params.id])).rows[0];
+ if(!o||o.refund_reviewed_at){await client.query('ROLLBACK');return fail(res,409,'Refund already reviewed or missing')}
+ if(decision==='reject'){
+   const amount=Number(o.total_cents);
+   const debit=await client.query('UPDATE users SET balance_cents=balance_cents-$1 WHERE id=$2 AND balance_cents >= $1 RETURNING id',[amount,o.user_id]);
+   if(!debit.rowCount){await client.query('ROLLBACK');return fail(res,409,'Cannot reverse refund: insufficient available wallet balance. Resolve remaining dispute manually.')}
+   await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'refund_reversal',$3)",[o.user_id,-amount,o.id]);
+   await client.query('UPDATE seller_earnings SET voided_at=NULL WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1) AND released_at IS NULL',[o.id]);
+ }
+ if(decision==='approve'&&o.buyer_status==='refund_requested'){
    await client.query('UPDATE users SET balance_cents=balance_cents+$1 WHERE id=$2',[o.total_cents,o.user_id]);
-   await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'refund',$3) ON CONFLICT DO NOTHING",[o.user_id,o.total_cents,o.id]);
+   await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'refund',$3)",[o.user_id,o.total_cents,o.id]);
    await client.query('UPDATE seller_earnings SET voided_at=now() WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1)',[o.id]);
  }
  await client.query('UPDATE orders SET buyer_status=$1,refund_reviewed_at=now(),refund_reviewed_by=$2,refund_admin_message=$3 WHERE id=$4',[decision==='approve'?'refunded':'refund_rejected',req.user.id,message,o.id]);
