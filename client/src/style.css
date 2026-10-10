@@ -164,3 +164,11 @@
 .seller-avatar{width:60px;height:60px;display:grid;place-items:center;background:#112b1d;color:#70f971;border:1px solid #43854a;border-radius:50%}
 .seller-storefront .products{padding:0;grid-template-columns:repeat(auto-fill,minmax(195px,1fr))}
 @media(max-width:760px){.product-detail-layout{grid-template-columns:1fr;gap:12px}.detail-photo{min-height:260px}.detail-photo img{max-height:370px}.seller-storefront .products{grid-template-columns:repeat(2,minmax(0,1fr))}.seller-heading{gap:11px}.seller-avatar{width:50px;height:50px}}
+
+/* Graceful product image fallback, consistent card and detail dimensions. */
+.missing-product-image{width:100%;height:100%;min-height:160px;background:linear-gradient(135deg,#091a15,#03100e);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#64f078;text-align:center;padding:20px;border-radius:6px}
+.missing-product-image span{font-size:12px;line-height:1.5;color:#a3c6af}
+.detail-photo>.missing-product-image{min-height:360px}
+.photo-preview-box{max-width:300px;margin:12px 0}
+.photo-preview-box .missing-product-image{min-height:180px}
+@media(max-width:760px){.detail-photo>.missing-product-image{min-height:260px}.missing-product-image span{font-size:11px}}
