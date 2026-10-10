@@ -40,6 +40,45 @@ app.patch('/api/deposits/:id/submit',guard,wrap(async(req,res)=>{const d=await o
 app.get('/api/wallet',guard,wrap(async(req,res)=>res.json({balance_cents:req.user.balance_cents,ledger:await query('SELECT * FROM ledger WHERE user_id=$1 ORDER BY id DESC',req.user.id)})));
 app.post('/api/orders',guard,wrap(async(req,res)=>{const items=req.body?.items;if(!Array.isArray(items)||items.length<1||items.length>40)return fail(res,400,'Invalid cart');const quantities=new Map();for(const it of items){const id=Number(it.id),qty=Number(it.quantity);if(!Number.isSafeInteger(id)||!Number.isSafeInteger(qty)||qty<1||qty>100)return fail(res,400,'Invalid cart');quantities.set(id,(quantities.get(id)||0)+qty)}const client=await pool.connect();try{await client.query('BEGIN');const ordered=[];let total=0;for(const [id,qty] of [...quantities].sort((a,b)=>a[0]-b[0])){const p=(await client.query('SELECT * FROM products WHERE id=$1 AND active=true FOR UPDATE',[id])).rows[0];if(!p||p.stock<qty)throw Error('One or more products are out of stock');total+=Number(p.price_cents)*qty;ordered.push({p,qty})}if(total<=0)throw Error('Invalid order');const debit=await client.query('UPDATE users SET balance_cents=balance_cents-$1 WHERE id=$2 AND balance_cents >= $1 RETURNING id',[total,req.user.id]);if(!debit.rowCount)throw Error('Insufficient wallet balance');const order=(await client.query('INSERT INTO orders(user_id,total_cents) VALUES($1,$2) RETURNING id',[req.user.id,total])).rows[0];for(const {p,qty} of ordered){await client.query('UPDATE products SET stock=stock-$1 WHERE id=$2',[qty,p.id]);const oi=(await client.query('INSERT INTO order_items(order_id,product_id,seller_id,title,price_cents,quantity,delivery_text) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[order.id,p.id,p.seller_id,p.title,p.price_cents,qty,p.delivery_text])).rows[0];if(p.seller_id){const gross=Number(p.price_cents)*qty,commission=Math.round(gross*35/100);await client.query('INSERT INTO seller_earnings(order_item_id,seller_id,gross_cents,commission_cents,net_cents) VALUES($1,$2,$3,$4,$5)',[oi.id,p.seller_id,gross,commission,gross-commission])}}await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'purchase',$3)",[req.user.id,-total,order.id]);await client.query('COMMIT');res.json({ok:true,order_id:order.id})}catch(e){await client.query('ROLLBACK');return fail(res,400,e.message)}finally{client.release()}}));
 app.get('/api/orders',guard,wrap(async(req,res)=>{const orders=await query('SELECT * FROM orders WHERE user_id=$1 ORDER BY id DESC',req.user.id);for(const o of orders)o.items=await query('SELECT * FROM order_items WHERE order_id=$1',o.id);res.json(orders)}));
+
+/* Buyer confirmation and 72-hour refund request window; all transitions are atomic. */
+app.patch('/api/orders/:id/confirm',guard,wrap(async(req,res)=>{
+ const client=await pool.connect();
+ try{await client.query('BEGIN');
+ const o=(await client.query("UPDATE orders SET buyer_status='confirmed' WHERE id=$1 AND user_id=$2 AND buyer_status IN ('pending','refund_rejected') RETURNING id",[req.params.id,req.user.id])).rows[0];
+ if(!o){await client.query('ROLLBACK');return fail(res,409,'This order cannot be confirmed')}
+ await client.query('UPDATE seller_earnings SET released_at=now() WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1) AND released_at IS NULL AND voided_at IS NULL',[o.id]);
+ await client.query('COMMIT');res.json({ok:true,status:'confirmed'});
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}));
+app.post('/api/orders/:id/refund',guard,wrap(async(req,res)=>{
+ const reason=String(req.body?.reason||'').trim();
+ if(reason.length<10||reason.length>1500)return fail(res,400,'Please explain the issue (10–1500 characters)');
+ const o=await one("UPDATE orders SET buyer_status='refund_requested',refund_reason=$1,refund_requested_at=now() WHERE id=$2 AND user_id=$3 AND buyer_status='pending' AND created_at >= now()-interval '3 days' RETURNING id",reason,req.params.id,req.user.id);
+ if(!o)return fail(res,409,'Refund can only be requested within 3 days before confirming receipt');
+ res.json({ok:true,status:'refund_requested'});
+}));
+app.get('/api/admin/refunds',guard,roles('admin'),wrap(async(_req,res)=>res.json(await query("SELECT o.id,o.user_id,u.username,o.total_cents,o.buyer_status,o.refund_reason,o.refund_requested_at,o.refund_admin_message,o.created_at FROM orders o JOIN users u ON u.id=o.user_id WHERE o.buyer_status IN ('refund_requested','refunded','refund_rejected') ORDER BY CASE WHEN o.buyer_status='refund_requested' THEN 0 ELSE 1 END,o.id DESC"))));
+app.patch('/api/admin/refunds/:id',guard,roles('admin'),wrap(async(req,res)=>{
+ const decision=req.body?.decision;
+ const message=String(req.body?.message||'').trim();
+ if(!['approve','reject'].includes(decision)||message.length>1500)return fail(res,400,'Invalid refund decision');
+ const client=await pool.connect();
+ try{await client.query('BEGIN');
+ const o=(await client.query("SELECT * FROM orders WHERE id=$1 AND buyer_status='refund_requested' FOR UPDATE",[req.params.id])).rows[0];
+ if(!o){await client.query('ROLLBACK');return fail(res,409,'Refund request already reviewed or missing')}
+ if(decision==='approve'){
+   const reserved=(await client.query("SELECT COALESCE(SUM(spr.amount_cents),0)::bigint AS reserved FROM seller_payout_requests spr WHERE spr.seller_id IN (SELECT DISTINCT oi.seller_id FROM order_items oi WHERE oi.order_id=$1 AND oi.seller_id IS NOT NULL) AND spr.status IN ('pending','paid')",[o.id])).rows[0];
+   const released=(await client.query("SELECT COUNT(*)::int AS n FROM seller_earnings se JOIN order_items oi ON oi.id=se.order_item_id WHERE oi.order_id=$1 AND se.released_at IS NOT NULL",[o.id])).rows[0];
+   if(released.n>0){await client.query('ROLLBACK');return fail(res,409,'Seller earnings already released; manual resolution required')}
+   await client.query('UPDATE users SET balance_cents=balance_cents+$1 WHERE id=$2',[o.total_cents,o.user_id]);
+   await client.query("INSERT INTO ledger(user_id,delta_cents,kind,reference_id) VALUES($1,$2,'refund',$3) ON CONFLICT DO NOTHING",[o.user_id,o.total_cents,o.id]);
+   await client.query('UPDATE seller_earnings SET voided_at=now() WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1)',[o.id]);
+ }
+ await client.query('UPDATE orders SET buyer_status=$1,refund_reviewed_at=now(),refund_reviewed_by=$2,refund_admin_message=$3 WHERE id=$4',[decision==='approve'?'refunded':'refund_rejected',req.user.id,message,o.id]);
+ await client.query('COMMIT');res.json({ok:true,status:decision==='approve'?'refunded':'refund_rejected'});
+ }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
+}));
 app.get('/api/admin/overview',guard,roles('admin'),wrap(async(_req,res)=>{const n=await one("SELECT (SELECT count(*) FROM users)::int users,(SELECT count(*) FROM products)::int products,(SELECT count(*) FROM deposits WHERE status='pending')::int pending,(SELECT count(*) FROM orders)::int orders");res.json(n)}));
 app.get('/api/admin/users',guard,roles('admin'),wrap(async(_req,res)=>res.json(await query('SELECT id,username,role,balance_cents,created_at FROM users ORDER BY id DESC'))));
 app.patch('/api/admin/users/:id',guard,roles('admin'),wrap(async(req,res)=>{if(!['user','seller','admin'].includes(req.body?.role)||Number(req.params.id)===Number(req.user.id))return fail(res,400,'Invalid role change');const r=await query('UPDATE users SET role=$1 WHERE id=$2 RETURNING id',req.body.role,req.params.id);res.json({ok:!!r.length})}));
@@ -111,7 +150,7 @@ app.get('/api/photos/:id',wrap(async(req,res)=>{
 
 /* Seller sales split is recorded at checkout: 35% platform commission, 65% seller net. All payments are manual and reviewed. */
 app.get('/api/seller/finance',guard,roles('seller','admin'),wrap(async(req,res)=>{
- const totals=await one('SELECT COALESCE(SUM(gross_cents),0)::bigint gross_cents,COALESCE(SUM(commission_cents),0)::bigint commission_cents,COALESCE(SUM(net_cents),0)::bigint net_cents FROM seller_earnings WHERE seller_id=$1',req.user.id);
+ const totals=await one('SELECT COALESCE(SUM(gross_cents),0)::bigint gross_cents,COALESCE(SUM(commission_cents),0)::bigint commission_cents,COALESCE(SUM(net_cents),0)::bigint net_cents FROM seller_earnings WHERE seller_id=$1 AND released_at IS NOT NULL AND voided_at IS NULL',req.user.id);
  const reserved=await one("SELECT COALESCE(SUM(amount_cents),0)::bigint reserved_cents FROM seller_payout_requests WHERE seller_id=$1 AND status IN ('pending','paid')",req.user.id);
  res.json({totals,reserved_cents:reserved.reserved_cents,available_cents:Math.max(0,Number(totals.net_cents)-Number(reserved.reserved_cents)),profile:await one('SELECT usdt_network,usdt_address FROM seller_payout_profiles WHERE user_id=$1',req.user.id),requests:await query('SELECT id,amount_cents,usdt_network,usdt_address,status,txid,created_at FROM seller_payout_requests WHERE seller_id=$1 ORDER BY id DESC',req.user.id)});
 }));
@@ -126,7 +165,7 @@ app.post('/api/seller/payout-requests',guard,roles('seller'),wrap(async(req,res)
  try{await client.query('BEGIN');await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[req.user.id]);
  const profile=(await client.query('SELECT * FROM seller_payout_profiles WHERE user_id=$1',[req.user.id])).rows[0];
  if(!profile){await client.query('ROLLBACK');return fail(res,400,'Configure your USDT receiving address first')}
- const totals=(await client.query('SELECT COALESCE(SUM(net_cents),0)::bigint n FROM seller_earnings WHERE seller_id=$1',[req.user.id])).rows[0];
+ const totals=(await client.query('SELECT COALESCE(SUM(net_cents),0)::bigint n FROM seller_earnings WHERE seller_id=$1 AND released_at IS NOT NULL AND voided_at IS NULL',[req.user.id])).rows[0];
  const used=(await client.query("SELECT COALESCE(SUM(amount_cents),0)::bigint n FROM seller_payout_requests WHERE seller_id=$1 AND status IN ('pending','paid')",[req.user.id])).rows[0];
  if(Number(totals.n)-Number(used.n)<amount){await client.query('ROLLBACK');return fail(res,400,'Insufficient seller earnings')}
  const payout=(await client.query("INSERT INTO seller_payout_requests(seller_id,amount_cents,usdt_network,usdt_address) VALUES($1,$2,$3,$4) RETURNING id,status",[req.user.id,amount,profile.usdt_network,profile.usdt_address])).rows[0];
