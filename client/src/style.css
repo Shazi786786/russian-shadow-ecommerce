@@ -172,3 +172,8 @@
 .photo-preview-box{max-width:300px;margin:12px 0}
 .photo-preview-box .missing-product-image{min-height:180px}
 @media(max-width:760px){.detail-photo>.missing-product-image{min-height:260px}.missing-product-image span{font-size:11px}}
+
+/* Customer notice bar */
+.buyer-assurance{min-height:34px;display:flex;justify-content:center;align-items:center;gap:10px;text-align:center;padding:8px 18px;background:#10251b;border-bottom:1px solid #348e4b;color:#b8ffd0;font-size:12px;font-weight:600;line-height:1.5}
+.buyer-assurance svg{flex-shrink:0;color:#65ff70}
+@media(max-width:760px){.buyer-assurance{font-size:10px;padding:9px 12px;gap:7px}}
