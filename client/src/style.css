@@ -187,3 +187,8 @@
 .order-actions{display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap}
 .order-actions .primary,.order-actions .outline{min-height:42px}
 @media(max-width:760px){.order-actions{flex-direction:column;align-items:stretch}.order-actions button{width:100%}.buyer-assurance{font-size:11px}}
+
+/* Top-bar platform account label */
+.owner-handle{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:#83ff91;background:#0f281c;border:1px solid #28573a;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:700;letter-spacing:.02em}
+.owner-handle svg{flex-shrink:0}
+@media(max-width:720px){.owner-handle{font-size:11px;padding:6px 8px;gap:4px}.owner-handle svg{width:12px;height:12px}}
