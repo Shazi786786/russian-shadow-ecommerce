@@ -196,3 +196,28 @@
 /* Mobile header: keep account access visible above search */
 @media(max-width:760px){.top-inner{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:8px!important;padding:10px 12px!important}.top-inner .logo{order:1!important;flex:1 1 auto!important}.top-inner .owner-handle{order:2!important}.top-inner .cart-button{order:3!important}.top-inner .head-link{order:4!important;display:inline-flex!important;visibility:visible!important;opacity:1!important;align-items:center!important;gap:5px!important;flex:0 0 auto!important;font-size:12px!important;white-space:nowrap!important;padding:9px!important;border:1px solid #34774b!important;border-radius:7px!important;color:#80ff89!important}.top-inner .hamburger{order:5!important;display:inline-flex!important}.top-inner .search{order:6!important;flex:1 0 100%!important;width:100%!important;margin:5px 0 0!important}.top-inner .head-link svg{width:15px;height:15px}}
 @media(max-width:390px){.top-inner .head-link{font-size:11px!important}.top-inner .owner-handle{padding:5px!important;font-size:10px!important}}
+
+/* Responsive header rebuild: predictable rows, never absolute-position search */
+@media(max-width:760px){
+ .top{height:auto!important;min-height:0!important;margin-bottom:0!important}
+ .top-inner{display:grid!important;grid-template-columns:minmax(0,1fr) auto auto!important;grid-template-rows:auto auto auto!important;gap:10px 8px!important;padding:12px!important;height:auto!important;align-items:center!important}
+ .top-inner .logo{grid-column:1!important;grid-row:1!important;order:unset!important;min-width:0!important;font-size:19px!important}
+ .top-inner .logo-figure{width:36px!important;height:36px!important;font-size:25px!important;flex-shrink:0!important}
+ .top-inner .cart-button{grid-column:2!important;grid-row:1!important;order:unset!important;min-width:38px!important;min-height:38px!important;display:grid!important;place-items:center!important}
+ .top-inner .hamburger{grid-column:3!important;grid-row:1!important;order:unset!important;display:grid!important;place-items:center!important;min-width:38px!important;min-height:38px!important}
+ .top-inner .head-link{grid-column:1/3!important;grid-row:2!important;order:unset!important;display:flex!important;justify-content:center!important;align-items:center!important;visibility:visible!important;opacity:1!important;font-size:14px!important;font-weight:700!important;line-height:1.2!important;min-height:44px!important;padding:10px 12px!important;white-space:normal!important;border:1px solid #4fbd68!important;border-radius:8px!important;background:#143321!important;color:#a0ff9e!important;overflow-wrap:anywhere!important}
+ .top-inner .owner-handle{grid-column:3!important;grid-row:2!important;order:unset!important;max-width:100%!important;min-height:44px!important;padding:8px!important;justify-content:center!important;font-size:0!important}
+ .top-inner .owner-handle svg{width:19px!important;height:19px!important}
+ .top-inner .owner-handle span{font-size:0!important}
+ .top-inner .search{grid-column:1/-1!important;grid-row:3!important;order:unset!important;position:static!important;top:auto!important;left:auto!important;right:auto!important;z-index:auto!important;display:flex!important;min-width:0!important;width:100%!important;max-width:none!important;flex:none!important;height:44px!important;margin:0!important}
+ .top-inner .search input{flex:1 1 0!important;width:0!important;min-width:0!important;padding:8px!important;font-size:13px!important}
+ .top-inner .search select{flex:0 1 120px!important;width:120px!important;min-width:0!important;padding:4px!important;font-size:11px!important}
+ .top-inner .search button{flex:0 0 46px!important;padding:0!important}
+}
+@media(min-width:761px) and (max-width:1100px){
+ .top-inner{gap:12px!important;padding:0 15px!important}
+ .top-inner .logo{min-width:130px!important;font-size:21px!important}
+ .top-inner .owner-handle{padding:7px!important;font-size:11px!important}
+ .top-inner .search{min-width:0!important}
+}
+@media(max-width:360px){.top-inner .search select{flex-basis:95px!important;width:95px!important}}
