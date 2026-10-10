@@ -177,3 +177,13 @@
 .buyer-assurance{min-height:34px;display:flex;justify-content:center;align-items:center;gap:10px;text-align:center;padding:8px 18px;background:#10251b;border-bottom:1px solid #348e4b;color:#b8ffd0;font-size:12px;font-weight:600;line-height:1.5}
 .buyer-assurance svg{flex-shrink:0;color:#65ff70}
 @media(max-width:760px){.buyer-assurance{font-size:10px;padding:9px 12px;gap:7px}}
+
+/* Three-day refund policy and order protection actions */
+.buyer-assurance{font-size:12px;line-height:1.55;background:#0b2418;border-bottom:1px solid #296d43;color:#b8f3c8}
+.buyer-assurance strong{color:#65ff79}
+.order-refund-box{margin-top:18px;padding:16px;border:1px solid #28533c;border-radius:7px;background:#081912}
+.order-refund-box>strong{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.order-refund-box p{font-size:13px;color:#c9e4d0;overflow-wrap:anywhere}
+.order-actions{display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap}
+.order-actions .primary,.order-actions .outline{min-height:42px}
+@media(max-width:760px){.order-actions{flex-direction:column;align-items:stretch}.order-actions button{width:100%}.buyer-assurance{font-size:11px}}
