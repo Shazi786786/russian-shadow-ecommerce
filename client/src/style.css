@@ -144,3 +144,23 @@
 .product-upload small{display:block;color:#9fbca9;line-height:1.5;margin-bottom:12px}
 .product-upload .upload-preview{display:block;max-width:100%;width:240px;height:190px;object-fit:contain;background:#071310;border:1px solid #2d7650;border-radius:7px;margin:10px 0 15px}
 @media(max-width:760px){.product-upload .upload-preview{width:100%;height:220px}}
+
+/* Click-through product pages and seller storefront */
+.product-open{display:block;text-align:left;width:100%;padding:0;border:0;background:transparent;cursor:pointer;color:inherit}
+.product-open h3{transition:color .18s ease}
+.product-open:hover h3,.product-open:focus-visible h3{color:#77ff79}
+.product-open:focus-visible,.seller-profile-link:focus-visible{outline:2px solid #71ff78;outline-offset:3px}
+.product-detail-layout{display:grid;grid-template-columns:minmax(280px,1fr) minmax(320px,1fr);gap:24px;margin:25px 0 40px;align-items:start}
+.detail-photo{min-height:400px;display:flex;justify-content:center;align-items:center;background:#0b1817}
+.detail-photo img{width:100%;max-height:540px;object-fit:contain;border-radius:6px}
+.detail-price{font-size:28px;font-weight:800}
+.seller-mini{border-top:1px solid #24523d;margin-top:30px;padding-top:22px}
+.seller-profile-link{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px;border:1px solid #2c5944;border-radius:8px;background:#091d16}
+.seller-profile-link:hover{border-color:#6bff65;background:#123022}
+.seller-profile-link strong,.seller-profile-link small{display:block}
+.seller-profile-link small{font-size:12px;color:#68f57a;margin-top:7px}
+.seller-heading{display:flex;align-items:center;gap:20px}
+.seller-heading h2{margin-bottom:4px}
+.seller-avatar{width:60px;height:60px;display:grid;place-items:center;background:#112b1d;color:#70f971;border:1px solid #43854a;border-radius:50%}
+.seller-storefront .products{padding:0;grid-template-columns:repeat(auto-fill,minmax(195px,1fr))}
+@media(max-width:760px){.product-detail-layout{grid-template-columns:1fr;gap:12px}.detail-photo{min-height:260px}.detail-photo img{max-height:370px}.seller-storefront .products{grid-template-columns:repeat(2,minmax(0,1fr))}.seller-heading{gap:11px}.seller-avatar{width:50px;height:50px}}
