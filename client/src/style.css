@@ -221,3 +221,18 @@
  .top-inner .search{min-width:0!important}
 }
 @media(max-width:360px){.top-inner .search select{flex-basis:95px!important;width:95px!important}}
+
+/* Hero account CTA: desktop retains its existing header account link */
+.hero-mobile-auth{display:none}
+@media(max-width:760px){
+ .top-inner .head-link{display:none!important}
+ .top-inner{grid-template-rows:auto auto!important}
+ .top-inner .owner-handle{grid-column:3!important;grid-row:1!important;min-height:36px!important}
+ .top-inner .cart-button{grid-column:2!important;grid-row:1!important}
+ .top-inner .hamburger{grid-column:3!important;grid-row:1!important;transform:translateY(30px)!important}
+ .top-inner .search{grid-column:1/-1!important;grid-row:2!important;margin-top:6px!important}
+ .top{margin-bottom:0!important}
+ .hero-mobile-auth{display:flex;justify-content:flex-start;margin:0 0 18px}
+ .hero-auth-btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:46px;padding:11px 20px;border:1px solid #71ff79;border-radius:9px;background:linear-gradient(115deg,#1b512d,#0c271b);color:#a9ffb0;font-size:14px;font-weight:800;box-shadow:0 5px 22px #071f13a6}
+ .hero-copy{padding-top:28px!important}
+}
