@@ -26,6 +26,13 @@ app.get('/api/me',guard,(req,res)=>res.json(req.user));
 app.get('/api/categories',wrap(async(_req,res)=>res.json(await query('SELECT * FROM categories ORDER BY id'))));
 app.get('/api/products',wrap(async(req,res)=>{const {category,q}=req.query;const rows=await query(`SELECT p.*,c.name category,u.username seller FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN users u ON u.id=p.seller_id WHERE p.active=true AND ($1::text IS NULL OR c.slug=$1) AND ($2::text IS NULL OR p.title ILIKE '%'||$2||'%' OR p.description ILIKE '%'||$2||'%') ORDER BY p.id DESC`,category&&category!=='all'?category:null,q||null);res.json(rows.map(cost))}));
 app.get('/api/products/:id',wrap(async(req,res)=>{const p=await one('SELECT * FROM products WHERE id=$1 AND active=true',req.params.id);return p?res.json(cost(p)):fail(res,404,'Product not found')}));
+app.get('/api/public/sellers/:id',wrap(async(req,res)=>{
+ const id=Number(req.params.id);
+ if(!Number.isSafeInteger(id)||id<1)return fail(res,404,'Seller not found');
+ const seller=await one("SELECT u.id,u.username,COALESCE((SELECT a.full_name FROM seller_applications a WHERE a.user_id=u.id AND a.status='approved' ORDER BY a.id DESC LIMIT 1),u.username) AS display_name,(SELECT a.service_category FROM seller_applications a WHERE a.user_id=u.id AND a.status='approved' ORDER BY a.id DESC LIMIT 1) AS service_category,(SELECT COUNT(*)::int FROM products p WHERE p.seller_id=u.id AND p.active=true) AS product_count FROM users u WHERE u.id=$1 AND u.role IN ('seller','admin')",id);
+ if(!seller)return fail(res,404,'Seller not found');
+ res.json(seller);
+}));
 app.get('/api/payments',guard,wrap(async(_req,res)=>res.json(await query("SELECT id,code,name,network FROM payment_methods WHERE enabled=true AND address<>''"))));
 app.post('/api/deposits',guard,wrap(async(req,res)=>{const amount=numeric(req.body?.amount_cents);if(!amount)return fail(res,400,'Invalid amount');const m=await one("SELECT * FROM payment_methods WHERE id=$1 AND enabled=true AND address<>''",req.body?.method_id);if(!m)return fail(res,400,'Payment method unavailable');const d=await one("INSERT INTO deposits(user_id,method_id,amount_cents,address_snapshot,expires_at) VALUES($1,$2,$3,$4,now()+interval '30 minutes') RETURNING *",req.user.id,m.id,amount,m.address);res.json({id:d.id,amount_cents:amount,address:m.address,code:m.code,network:m.network,expires_at:d.expires_at})}));
 app.get('/api/deposits',guard,wrap(async(req,res)=>res.json(await query('SELECT d.*,m.code,m.network FROM deposits d JOIN payment_methods m ON m.id=d.method_id WHERE d.user_id=$1 ORDER BY d.id DESC',req.user.id))));
